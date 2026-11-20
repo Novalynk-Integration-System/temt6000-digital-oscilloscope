@@ -18,6 +18,7 @@ constexpr uint32_t kQueueLength = 4096;   // about 4 seconds of buffering
 constexpr uart_port_t kSerialUart = UART_NUM_0;
 constexpr int kSerialBaudRate = 921600;
 constexpr size_t kSerialBatchSamples = 32;
+constexpr int kSerialRxBufferSize = 256;
 constexpr int kSerialTxBufferSize = 4096;
 
 constexpr int kSamplingTaskPriority = 12;

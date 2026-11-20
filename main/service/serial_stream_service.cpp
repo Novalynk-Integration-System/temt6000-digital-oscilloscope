@@ -24,8 +24,8 @@ esp_err_t SerialStreamService::start()
     ESP_RETURN_ON_ERROR(uart_param_config(app_config::kSerialUart, &uart_config),
                         "SerialStream", "configure UART");
     ESP_RETURN_ON_ERROR(
-        uart_driver_install(app_config::kSerialUart, 0, app_config::kSerialTxBufferSize,
-                            0, nullptr, 0),
+        uart_driver_install(app_config::kSerialUart, app_config::kSerialRxBufferSize,
+                            app_config::kSerialTxBufferSize, 0, nullptr, 0),
         "SerialStream", "install UART driver");
 
     const BaseType_t result = xTaskCreate(task_entry, "serial_stream",
