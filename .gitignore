@@ -1,0 +1,6 @@
+build/
+sdkconfig
+managed_components/
+python-scope/.venv/
+__pycache__/
+*.py[cod]
