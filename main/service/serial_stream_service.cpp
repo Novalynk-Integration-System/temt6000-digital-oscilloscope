@@ -1,14 +1,33 @@
 #include "service/serial_stream_service.hpp"
 
-#include <cstdio>
 #include <inttypes.h>
+#include <cstdio>
 
 #include "common/sensor_sample.hpp"
 #include "config/app_config.hpp"
+#include "driver/uart.h"
+#include "esp_check.h"
 #include "freertos/task.h"
 
 esp_err_t SerialStreamService::start()
 {
+    const uart_config_t uart_config = {
+        .baud_rate = app_config::kSerialBaudRate,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .rx_flow_ctrl_thresh = 0,
+        .source_clk = UART_SCLK_DEFAULT,
+        .flags = {},
+    };
+    ESP_RETURN_ON_ERROR(uart_param_config(app_config::kSerialUart, &uart_config),
+                        "SerialStream", "configure UART");
+    ESP_RETURN_ON_ERROR(
+        uart_driver_install(app_config::kSerialUart, 0, app_config::kSerialTxBufferSize,
+                            0, nullptr, 0),
+        "SerialStream", "install UART driver");
+
     const BaseType_t result = xTaskCreate(task_entry, "serial_stream",
                                           app_config::kSerialTaskStack, this,
                                           app_config::kSerialTaskPriority, nullptr);
@@ -24,16 +43,33 @@ void SerialStreamService::run()
 {
     // One line is one atomic application frame:
     // D,<sequence>,<timestamp_us>,<raw>,<millivolts>
-    SensorSample sample{};
-    char line[80];
+    constexpr size_t kMaxLineLength = 80;
+    SensorSample samples[app_config::kSerialBatchSamples]{};
+    char output[app_config::kSerialBatchSamples * kMaxLineLength];
+
     while (true) {
-        if (xQueueReceive(queue_, &sample, portMAX_DELAY) == pdTRUE) {
+        size_t sample_count = 0;
+        if (xQueueReceive(queue_, &samples[sample_count], portMAX_DELAY) == pdTRUE) {
+            ++sample_count;
+        }
+        while (sample_count < app_config::kSerialBatchSamples &&
+               xQueueReceive(queue_, &samples[sample_count], 0) == pdTRUE) {
+            ++sample_count;
+        }
+
+        size_t output_length = 0;
+        for (size_t index = 0; index < sample_count; ++index) {
+            const SensorSample& sample = samples[index];
             const int length = std::snprintf(
-                line, sizeof(line), "D,%" PRIu32 ",%" PRId64 ",%" PRId32 ",%" PRId32 "\n",
+                output + output_length, sizeof(output) - output_length,
+                "D,%" PRIu32 ",%" PRId64 ",%" PRId32 ",%" PRId32 "\n",
                 sample.sequence, sample.timestamp_us, sample.raw, sample.millivolts);
             if (length > 0) {
-                std::fwrite(line, 1, static_cast<size_t>(length), stdout);
+                output_length += static_cast<size_t>(length);
             }
+        }
+        if (output_length > 0) {
+            uart_write_bytes(app_config::kSerialUart, output, output_length);
         }
     }
 }

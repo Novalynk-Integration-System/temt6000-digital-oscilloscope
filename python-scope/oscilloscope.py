@@ -26,15 +26,19 @@ class SerialReader(threading.Thread):
         self.output = output
         self.stop_event = threading.Event()
         self.error: Exception | None = None
+        self.malformed = 0
 
     def run(self) -> None:
         try:
             with serial.Serial(self.port, self.baud, timeout=0.2) as connection:
                 connection.reset_input_buffer()
                 while not self.stop_event.is_set():
-                    sample = parse_sample(connection.readline())
+                    line = connection.readline()
+                    sample = parse_sample(line)
                     if sample is not None:
                         self.output.put(sample)
+                    elif line:
+                        self.malformed += 1
         except Exception as exc:  # reported by the UI timer
             self.error = exc
 
@@ -50,8 +54,10 @@ class ScopeWindow(QtWidgets.QMainWindow):
         self.window_seconds = window_seconds
         self.received = 0
         self.missing = 0
+        self.resets = 0
         self.previous_sequence: int | None = None
         self.started = time.monotonic()
+        self.arrival_times: deque[float] = deque()
 
         self.plot = pg.PlotWidget()
         self.plot.setLabel("bottom", "Time", "s")
@@ -75,12 +81,15 @@ class ScopeWindow(QtWidgets.QMainWindow):
             except queue.Empty:
                 break
             if self.previous_sequence is not None:
-                expected = (self.previous_sequence + 1) & 0xFFFFFFFF
-                if sample.sequence != expected:
-                    self.missing += (sample.sequence - expected) & 0xFFFFFFFF
+                delta = (sample.sequence - self.previous_sequence) & 0xFFFFFFFF
+                if 1 < delta < 0x80000000:
+                    self.missing += delta - 1
+                elif delta >= 0x80000000:
+                    self.resets += 1
             self.previous_sequence = sample.sequence
             self.received += 1
             self.samples.append(sample)
+            self.arrival_times.append(time.monotonic())
 
         if self.reader.error is not None:
             self.timer.stop()
@@ -100,10 +109,15 @@ class ScopeWindow(QtWidgets.QMainWindow):
         )
         self.plot.setLabel("left", "ADC output", "mV" if use_mv else "raw")
         self.curve.setData((timestamps - latest_us) / 1_000_000.0, values)
-        elapsed = max(0.001, time.monotonic() - self.started)
+        now = time.monotonic()
+        while self.arrival_times and self.arrival_times[0] < now - 1.0:
+            self.arrival_times.popleft()
+        elapsed = max(0.001, now - self.started)
+        rate_1s = float(len(self.arrival_times))
         self.status.showMessage(
-            f"received={self.received}  missing={self.missing}  "
-            f"average={self.received / elapsed:.1f} sample/s"
+            f"received={self.received}  rate_1s={rate_1s:.0f} sample/s  "
+            f"average={self.received / elapsed:.1f} sample/s  missing={self.missing}  "
+            f"malformed={self.reader.malformed}  resets={self.resets}"
         )
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt API)
