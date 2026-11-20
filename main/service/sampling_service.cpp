@@ -21,11 +21,11 @@ void SamplingService::task_entry(void* context)
 void SamplingService::run()
 {
     uint32_t sequence = 0;
-    const TickType_t sample_period = pdMS_TO_TICKS(1);
+    const TickType_t sample_period = pdMS_TO_TICKS(app_config::kSamplePeriodMs);
     TickType_t last_wake = xTaskGetTickCount();
 
     while (true) {
-        // Block until the next 1 ms tick. Unlike a busy-wait, this leaves CPU time
+        // Block until the configured sampling tick. Unlike a busy-wait, this leaves CPU time
         // available for the lower-priority serial consumer on the single-core C6.
         const TickType_t now = xTaskGetTickCount();
         if ((now - last_wake) > sample_period) {
