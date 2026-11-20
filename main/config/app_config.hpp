@@ -12,8 +12,7 @@ constexpr adc_channel_t kAdcChannel = ADC_CHANNEL_0;
 constexpr adc_atten_t kAdcAttenuation = ADC_ATTEN_DB_12;
 constexpr adc_bitwidth_t kAdcBitWidth = ADC_BITWIDTH_DEFAULT;
 
-// Temporary audit mode: one genuine ADC conversion every 500 ms (2 samples/s).
-constexpr uint32_t kSamplePeriodMs = 500;
+constexpr uint32_t kSamplePeriodMs = 1; // 1 kHz
 constexpr uint32_t kQueueLength = 4096;
 constexpr size_t kSerialBatchSamples = 32;
 constexpr size_t kUsbSerialRxBufferSize = 256;

@@ -1,7 +1,6 @@
 # TEMT6000 ESP32 Digital Oscilloscope
 
-POC pembacaan sensor cahaya TEMT6000 dengan ESP-IDF. Saat ini firmware berada dalam
-mode audit sementara: satu pembacaan ADC setiap 500 ms (2 sampel/detik). Task sampling dan
+POC pembacaan sensor cahaya TEMT6000 pada 1 kHz dengan ESP-IDF. Task sampling dan
 task serial berjalan terpisah. Setiap sampel masuk ke FreeRTOS queue, kemudian task
 serial mengirimkannya ke aplikasi Python yang menampilkan grafik real-time.
 
