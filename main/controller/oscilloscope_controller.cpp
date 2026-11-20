@@ -11,7 +11,7 @@
 esp_err_t OscilloscopeController::init()
 {
     ESP_RETURN_ON_ERROR(sensor_.init(), "ScopeController", "sensor init");
-    queue_ = xQueueCreate(app_config::kQueueLength, sizeof(SensorSample));
+    queue_ = xQueueCreate(app_config::kQueueLength, sizeof(SensorSampleBlock));
     if (queue_ == nullptr) {
         return ESP_ERR_NO_MEM;
     }

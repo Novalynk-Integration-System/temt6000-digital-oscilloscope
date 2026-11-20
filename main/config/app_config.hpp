@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+
 #include "esp_adc/adc_oneshot.h"
 
 namespace app_config {
@@ -10,8 +12,13 @@ constexpr adc_channel_t kAdcChannel = ADC_CHANNEL_0;
 constexpr adc_atten_t kAdcAttenuation = ADC_ATTEN_DB_12;
 constexpr adc_bitwidth_t kAdcBitWidth = ADC_BITWIDTH_DEFAULT;
 
-constexpr uint32_t kSamplePeriodUs = 1000; // 1 kHz
-constexpr uint32_t kQueueLength = 4096;   // about 4 seconds of buffering
+constexpr uint32_t kSampleRateHz = 20000;
+constexpr size_t kSamplesPerBlock = 64;
+constexpr size_t kAdcDmaFrameBytes = kSamplesPerBlock * 4;
+constexpr uint32_t kQueueLength = 64; // blocks, about 205 ms of buffering
+constexpr size_t kSerialBatchBlocks = 8;
+constexpr size_t kUsbSerialRxBufferSize = 256;
+constexpr size_t kUsbSerialTxBufferSize = 4096;
 
 constexpr int kSamplingTaskPriority = 12;
 constexpr int kSerialTaskPriority = 10;

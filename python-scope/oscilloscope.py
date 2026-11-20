@@ -15,7 +15,7 @@ import serial
 from serial.tools import list_ports
 from PySide6 import QtCore, QtWidgets
 
-from protocol import Sample, parse_sample
+from protocol import Sample, StreamParser
 
 
 class SerialReader(threading.Thread):
@@ -26,15 +26,19 @@ class SerialReader(threading.Thread):
         self.output = output
         self.stop_event = threading.Event()
         self.error: Exception | None = None
+        self.malformed = 0
 
     def run(self) -> None:
         try:
             with serial.Serial(self.port, self.baud, timeout=0.2) as connection:
                 connection.reset_input_buffer()
+                parser = StreamParser()
                 while not self.stop_event.is_set():
-                    sample = parse_sample(connection.readline())
-                    if sample is not None:
-                        self.output.put(sample)
+                    data = connection.read(4096)
+                    if data:
+                        for sample in parser.feed(data):
+                            self.output.put(sample)
+                        self.malformed = parser.malformed
         except Exception as exc:  # reported by the UI timer
             self.error = exc
 
@@ -45,13 +49,15 @@ class ScopeWindow(QtWidgets.QMainWindow):
         self.setWindowTitle(f"TEMT6000 Digital Oscilloscope — {port}")
         self.resize(1100, 650)
         self.incoming: queue.Queue[Sample] = queue.Queue()
-        capacity = max(1000, int(window_seconds * 1200))
+        capacity = max(4000, int(window_seconds * 22_000))
         self.samples: deque[Sample] = deque(maxlen=capacity)
         self.window_seconds = window_seconds
         self.received = 0
         self.missing = 0
+        self.resets = 0
         self.previous_sequence: int | None = None
         self.started = time.monotonic()
+        self.arrival_times: deque[float] = deque()
 
         self.plot = pg.PlotWidget()
         self.plot.setLabel("bottom", "Time", "s")
@@ -75,12 +81,15 @@ class ScopeWindow(QtWidgets.QMainWindow):
             except queue.Empty:
                 break
             if self.previous_sequence is not None:
-                expected = (self.previous_sequence + 1) & 0xFFFFFFFF
-                if sample.sequence != expected:
-                    self.missing += (sample.sequence - expected) & 0xFFFFFFFF
+                delta = (sample.sequence - self.previous_sequence) & 0xFFFFFFFF
+                if 1 < delta < 0x80000000:
+                    self.missing += delta - 1
+                elif delta >= 0x80000000:
+                    self.resets += 1
             self.previous_sequence = sample.sequence
             self.received += 1
             self.samples.append(sample)
+            self.arrival_times.append(time.monotonic())
 
         if self.reader.error is not None:
             self.timer.stop()
@@ -100,10 +109,15 @@ class ScopeWindow(QtWidgets.QMainWindow):
         )
         self.plot.setLabel("left", "ADC output", "mV" if use_mv else "raw")
         self.curve.setData((timestamps - latest_us) / 1_000_000.0, values)
-        elapsed = max(0.001, time.monotonic() - self.started)
+        now = time.monotonic()
+        while self.arrival_times and self.arrival_times[0] < now - 1.0:
+            self.arrival_times.popleft()
+        elapsed = max(0.001, now - self.started)
+        rate_1s = float(len(self.arrival_times))
         self.status.showMessage(
-            f"received={self.received}  missing={self.missing}  "
-            f"average={self.received / elapsed:.1f} sample/s"
+            f"received={self.received}  rate_1s={rate_1s:.0f} sample/s  "
+            f"average={self.received / elapsed:.1f} sample/s  missing={self.missing}  "
+            f"malformed={self.reader.malformed}  resets={self.resets}"
         )
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt API)
@@ -121,7 +135,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", help="serial port, for example COM7")
     parser.add_argument("--baud", type=int, default=921600)
-    parser.add_argument("--window", type=float, default=5.0, help="visible seconds")
+    parser.add_argument("--window", type=float, default=0.2, help="visible seconds")
     args = parser.parse_args()
     if not args.port:
         parser.error(f"--port is required (available: {available_ports()})")
