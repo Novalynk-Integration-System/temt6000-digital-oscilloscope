@@ -44,8 +44,10 @@ void SerialStreamService::run()
     // One line is one atomic application frame:
     // D,<sequence>,<timestamp_us>,<raw>,<millivolts>
     constexpr size_t kMaxLineLength = 80;
-    SensorSample samples[app_config::kSerialBatchSamples]{};
-    char output[app_config::kSerialBatchSamples * kMaxLineLength];
+    // These buffers are intentionally static. Keeping a multi-kilobyte batch on the
+    // 4 KiB FreeRTOS task stack leaves too little room for snprintf's own stack use.
+    static SensorSample samples[app_config::kSerialBatchSamples]{};
+    static char output[app_config::kSerialBatchSamples * kMaxLineLength];
 
     while (true) {
         size_t sample_count = 0;
