@@ -12,9 +12,11 @@ constexpr adc_channel_t kAdcChannel = ADC_CHANNEL_0;
 constexpr adc_atten_t kAdcAttenuation = ADC_ATTEN_DB_12;
 constexpr adc_bitwidth_t kAdcBitWidth = ADC_BITWIDTH_DEFAULT;
 
-constexpr uint32_t kSamplePeriodMs = 1; // 1 kHz
-constexpr uint32_t kQueueLength = 4096;
-constexpr size_t kSerialBatchSamples = 32;
+constexpr uint32_t kSampleRateHz = 20000;
+constexpr size_t kSamplesPerBlock = 64;
+constexpr size_t kAdcDmaFrameBytes = kSamplesPerBlock * 4;
+constexpr uint32_t kQueueLength = 64; // blocks, about 205 ms of buffering
+constexpr size_t kSerialBatchBlocks = 8;
 constexpr size_t kUsbSerialRxBufferSize = 256;
 constexpr size_t kUsbSerialTxBufferSize = 4096;
 

@@ -1,5 +1,7 @@
 #include "service/sampling_service.hpp"
 
+#include <cstring>
+
 #include "common/sensor_sample.hpp"
 #include "config/app_config.hpp"
 #include "esp_timer.h"
@@ -21,32 +23,33 @@ void SamplingService::task_entry(void* context)
 void SamplingService::run()
 {
     uint32_t sequence = 0;
-    const TickType_t sample_period = pdMS_TO_TICKS(app_config::kSamplePeriodMs);
-    TickType_t last_wake = xTaskGetTickCount();
+    if (sensor_.start() != ESP_OK) {
+        vTaskDelete(nullptr);
+        return;
+    }
 
     while (true) {
-        // Block until the configured sampling tick. Unlike a busy-wait, this leaves CPU time
-        // available for the lower-priority serial consumer on the single-core C6.
-        const TickType_t now = xTaskGetTickCount();
-        if ((now - last_wake) > sample_period) {
-            // Do not emit a catch-up burst after queue backpressure or a long stall.
-            last_wake = now;
-        }
-        xTaskDelayUntil(&last_wake, sample_period);
-
-        SensorSample sample = {
-            .sequence = sequence++,
-            .timestamp_us = esp_timer_get_time(),
-            .raw = 0,
-            .millivolts = -1,
+        SensorSampleBlock block = {
+            .magic = kSampleBlockMagic,
+            .version = kSampleBlockVersion,
+            .sample_count = 0,
+            .sequence_start = sequence,
+            .first_timestamp_us = 0,
+            .sample_rate_hz = app_config::kSampleRateHz,
+            .raw = {},
         };
-        int raw = 0;
-        int millivolts = -1;
-        if (sensor_.read(raw, millivolts) == ESP_OK) {
-            sample.raw = static_cast<int32_t>(raw);
-            sample.millivolts = static_cast<int32_t>(millivolts);
-            // Blocking send provides backpressure: a sample is never silently discarded.
-            xQueueSend(queue_, &sample, portMAX_DELAY);
+        uint16_t raw[app_config::kSamplesPerBlock]{};
+        size_t sample_count = 0;
+        if (sensor_.read(raw, app_config::kSamplesPerBlock, sample_count) == ESP_OK &&
+            sample_count > 0) {
+            std::memcpy(block.raw, raw, sample_count * sizeof(uint16_t));
+            block.sample_count = static_cast<uint16_t>(sample_count);
+            const int64_t block_end_us = esp_timer_get_time();
+            block.first_timestamp_us = block_end_us -
+                static_cast<int64_t>((sample_count - 1) * 1000000ULL /
+                                     app_config::kSampleRateHz);
+            sequence += static_cast<uint32_t>(sample_count);
+            xQueueSend(queue_, &block, portMAX_DELAY);
         }
     }
 }

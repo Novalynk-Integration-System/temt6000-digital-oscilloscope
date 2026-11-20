@@ -1,8 +1,9 @@
 # TEMT6000 ESP32 Digital Oscilloscope
 
-POC pembacaan sensor cahaya TEMT6000 pada 1 kHz dengan ESP-IDF. Task sampling dan
-task serial berjalan terpisah. Setiap sampel masuk ke FreeRTOS queue, kemudian task
-serial mengirimkannya ke aplikasi Python yang menampilkan grafik real-time.
+POC pembacaan sensor cahaya TEMT6000 pada 20 kS/s dengan ESP-IDF. ADC berjalan dalam
+continuous mode berbasis DMA. Task sampling memasukkan blok 64 sampel ke FreeRTOS
+queue, kemudian task serial mengirim blok biner ke aplikasi Python yang menampilkan
+grafik real-time.
 
 ## Hardware awal
 
@@ -21,17 +22,16 @@ dengan Wi-Fi.
 
 `TEMT6000 -> ADC task (1 ms) -> FreeRTOS queue -> serial task -> USB serial -> Python`
 
-Frame serial berbentuk CSV:
+Frame USB berbentuk biner little-endian:
 
 ```text
-D,<sequence>,<timestamp_us>,<raw>,<millivolts>
+magic, version, sample_count, sequence_start, first_timestamp_us,
+sample_rate_hz, raw[sample_count]
 ```
 
-Sequence dipakai Python untuk mendeteksi kehilangan frame. Queue berisi 4096 sampel
-dan producer menggunakan blocking send, sehingga firmware tidak membuang sampel
-secara diam-diam. Perlu dicatat: tidak ada buffer terbatas yang dapat menjamin data
-selamanya bila laptop berhenti membaca; saat queue penuh sampling akan menerima
-backpressure dan berhenti sampai serial kembali menguras queue.
+Sequence dipakai Python untuk mendeteksi kehilangan sampel. Queue berisi 64 blok dan
+producer menggunakan blocking send. Perlu dicatat: pool DMA internal dapat overflow
+bila laptop berhenti membaca terlalu lama; karena itu `missing` tetap harus diaudit.
 
 ## Build dan flash
 

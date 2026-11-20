@@ -15,7 +15,7 @@ import serial
 from serial.tools import list_ports
 from PySide6 import QtCore, QtWidgets
 
-from protocol import Sample, parse_sample
+from protocol import Sample, StreamParser
 
 
 class SerialReader(threading.Thread):
@@ -32,13 +32,13 @@ class SerialReader(threading.Thread):
         try:
             with serial.Serial(self.port, self.baud, timeout=0.2) as connection:
                 connection.reset_input_buffer()
+                parser = StreamParser()
                 while not self.stop_event.is_set():
-                    line = connection.readline()
-                    sample = parse_sample(line)
-                    if sample is not None:
-                        self.output.put(sample)
-                    elif line:
-                        self.malformed += 1
+                    data = connection.read(4096)
+                    if data:
+                        for sample in parser.feed(data):
+                            self.output.put(sample)
+                        self.malformed = parser.malformed
         except Exception as exc:  # reported by the UI timer
             self.error = exc
 
@@ -49,7 +49,7 @@ class ScopeWindow(QtWidgets.QMainWindow):
         self.setWindowTitle(f"TEMT6000 Digital Oscilloscope — {port}")
         self.resize(1100, 650)
         self.incoming: queue.Queue[Sample] = queue.Queue()
-        capacity = max(1000, int(window_seconds * 1200))
+        capacity = max(4000, int(window_seconds * 22_000))
         self.samples: deque[Sample] = deque(maxlen=capacity)
         self.window_seconds = window_seconds
         self.received = 0
@@ -135,7 +135,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", help="serial port, for example COM7")
     parser.add_argument("--baud", type=int, default=921600)
-    parser.add_argument("--window", type=float, default=5.0, help="visible seconds")
+    parser.add_argument("--window", type=float, default=0.2, help="visible seconds")
     args = parser.parse_args()
     if not args.port:
         parser.error(f"--port is required (available: {available_ports()})")

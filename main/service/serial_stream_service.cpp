@@ -1,7 +1,6 @@
 #include "service/serial_stream_service.hpp"
 
-#include <inttypes.h>
-#include <cstdio>
+#include <cstring>
 
 #include "common/sensor_sample.hpp"
 #include "config/app_config.hpp"
@@ -31,34 +30,25 @@ void SerialStreamService::task_entry(void* context)
 
 void SerialStreamService::run()
 {
-    // One line is one atomic application frame:
-    // D,<sequence>,<timestamp_us>,<raw>,<millivolts>
-    constexpr size_t kMaxLineLength = 80;
-    // These buffers are intentionally static. Keeping a multi-kilobyte batch on the
-    // 4 KiB FreeRTOS task stack leaves too little room for snprintf's own stack use.
-    static SensorSample samples[app_config::kSerialBatchSamples]{};
-    static char output[app_config::kSerialBatchSamples * kMaxLineLength];
+    static SensorSampleBlock blocks[app_config::kSerialBatchBlocks]{};
+    static uint8_t output[app_config::kSerialBatchBlocks * sizeof(SensorSampleBlock)];
 
     while (true) {
-        size_t sample_count = 0;
-        if (xQueueReceive(queue_, &samples[sample_count], portMAX_DELAY) == pdTRUE) {
-            ++sample_count;
+        size_t block_count = 0;
+        if (xQueueReceive(queue_, &blocks[block_count], portMAX_DELAY) == pdTRUE) {
+            ++block_count;
         }
-        while (sample_count < app_config::kSerialBatchSamples &&
-               xQueueReceive(queue_, &samples[sample_count], 0) == pdTRUE) {
-            ++sample_count;
+        while (block_count < app_config::kSerialBatchBlocks &&
+               xQueueReceive(queue_, &blocks[block_count], 0) == pdTRUE) {
+            ++block_count;
         }
 
         size_t output_length = 0;
-        for (size_t index = 0; index < sample_count; ++index) {
-            const SensorSample& sample = samples[index];
-            const int length = std::snprintf(
-                output + output_length, sizeof(output) - output_length,
-                "D,%" PRIu32 ",%" PRId64 ",%" PRId32 ",%" PRId32 "\n",
-                sample.sequence, sample.timestamp_us, sample.raw, sample.millivolts);
-            if (length > 0) {
-                output_length += static_cast<size_t>(length);
-            }
+        for (size_t index = 0; index < block_count; ++index) {
+            const size_t block_length = sizeof(SensorSampleBlock) -
+                (app_config::kSamplesPerBlock - blocks[index].sample_count) * sizeof(uint16_t);
+            std::memcpy(output + output_length, &blocks[index], block_length);
+            output_length += block_length;
         }
         if (output_length > 0) {
             usb_serial_jtag_write_bytes(output, output_length, portMAX_DELAY);
