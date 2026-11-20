@@ -21,17 +21,18 @@ void SamplingService::task_entry(void* context)
 void SamplingService::run()
 {
     uint32_t sequence = 0;
-    int64_t next_sample_us = esp_timer_get_time();
+    const TickType_t sample_period = pdMS_TO_TICKS(1);
+    TickType_t last_wake = xTaskGetTickCount();
 
     while (true) {
-        next_sample_us += app_config::kSamplePeriodUs;
-        const int64_t remaining_us = next_sample_us - esp_timer_get_time();
-        if (remaining_us >= 1000) {
-            vTaskDelay(pdMS_TO_TICKS(static_cast<uint32_t>(remaining_us / 1000)));
+        // Block until the next 1 ms tick. Unlike a busy-wait, this leaves CPU time
+        // available for the lower-priority serial consumer on the single-core C6.
+        const TickType_t now = xTaskGetTickCount();
+        if ((now - last_wake) > sample_period) {
+            // Do not emit a catch-up burst after queue backpressure or a long stall.
+            last_wake = now;
         }
-        while (esp_timer_get_time() < next_sample_us) {
-            taskYIELD();
-        }
+        xTaskDelayUntil(&last_wake, sample_period);
 
         SensorSample sample = {
             .sequence = sequence++,
@@ -46,12 +47,6 @@ void SamplingService::run()
             sample.millivolts = static_cast<int32_t>(millivolts);
             // Blocking send provides backpressure: a sample is never silently discarded.
             xQueueSend(queue_, &sample, portMAX_DELAY);
-        }
-
-        // Recover cleanly if execution was delayed by more than one period.
-        const int64_t now_us = esp_timer_get_time();
-        if (now_us - next_sample_us > static_cast<int64_t>(app_config::kSamplePeriodUs)) {
-            next_sample_us = now_us;
         }
     }
 }
