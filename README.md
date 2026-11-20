@@ -59,8 +59,9 @@ python oscilloscope.py --port COM7
 Grafik menampilkan lima detik terakhir secara default. Ubah dengan `--window 10`.
 Status bar menampilkan receive rate satu detik, rata-rata sejak startup, sequence yang
 hilang, frame malformed, dan jumlah reset sequence ESP32. Serial task menguras queue
-dalam batch hingga 32 sampel dan mengirim satu buffer melalui driver UART agar overhead
-per sampel tetap rendah pada 1 kHz.
+dalam batch hingga 32 sampel dan mengirim satu buffer melalui USB Serial/JTAG native
+ESP32-C6 agar overhead per sampel tetap rendah pada 1 kHz. Parameter baud pada aplikasi
+Python diabaikan oleh USB native, tetapi dipertahankan agar CLI tetap konsisten.
 
 Untuk melihat osilasi saat POC, arahkan sumber cahaya yang dimodulasi (misalnya LED
 yang dikendalikan PWM) ke TEMT6000. Cahaya ruangan yang stabil hanya menghasilkan

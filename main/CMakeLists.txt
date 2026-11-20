@@ -6,5 +6,5 @@ idf_component_register(
         "service/sampling_service.cpp"
         "service/serial_stream_service.cpp"
     INCLUDE_DIRS "."
-    REQUIRES esp_adc esp_driver_uart esp_timer
+    REQUIRES esp_adc esp_driver_usb_serial_jtag esp_timer
 )

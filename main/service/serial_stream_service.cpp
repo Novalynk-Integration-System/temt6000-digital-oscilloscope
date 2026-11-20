@@ -5,28 +5,18 @@
 
 #include "common/sensor_sample.hpp"
 #include "config/app_config.hpp"
-#include "driver/uart.h"
+#include "driver/usb_serial_jtag.h"
 #include "esp_check.h"
 #include "freertos/task.h"
 
 esp_err_t SerialStreamService::start()
 {
-    const uart_config_t uart_config = {
-        .baud_rate = app_config::kSerialBaudRate,
-        .data_bits = UART_DATA_8_BITS,
-        .parity = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-        .rx_flow_ctrl_thresh = 0,
-        .source_clk = UART_SCLK_DEFAULT,
-        .flags = {},
+    usb_serial_jtag_driver_config_t usb_config = {
+        .tx_buffer_size = app_config::kUsbSerialTxBufferSize,
+        .rx_buffer_size = app_config::kUsbSerialRxBufferSize,
     };
-    ESP_RETURN_ON_ERROR(uart_param_config(app_config::kSerialUart, &uart_config),
-                        "SerialStream", "configure UART");
-    ESP_RETURN_ON_ERROR(
-        uart_driver_install(app_config::kSerialUart, app_config::kSerialRxBufferSize,
-                            app_config::kSerialTxBufferSize, 0, nullptr, 0),
-        "SerialStream", "install UART driver");
+    ESP_RETURN_ON_ERROR(usb_serial_jtag_driver_install(&usb_config),
+                        "SerialStream", "install USB Serial/JTAG driver");
 
     const BaseType_t result = xTaskCreate(task_entry, "serial_stream",
                                           app_config::kSerialTaskStack, this,
@@ -71,7 +61,7 @@ void SerialStreamService::run()
             }
         }
         if (output_length > 0) {
-            uart_write_bytes(app_config::kSerialUart, output, output_length);
+            usb_serial_jtag_write_bytes(output, output_length, portMAX_DELAY);
         }
     }
 }
